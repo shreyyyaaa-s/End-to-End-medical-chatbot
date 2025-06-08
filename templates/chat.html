@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Medical Chatbot</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="chat-container">
+    <header class="chat-header">
+      <img src="{{ url_for('static', filename='Chatbot Message Bubble.jpg') }}" class="header-avatar" alt="Bot">
+      <div>
+        <h2>Medical Chatbot</h2>
+        <p>Ask me anything!</p>
+      </div>
+    </header>
+
+    <div class="chat-window" id="chat-window">
+      <!-- Initial welcome or sample message (optional) -->
+      <div class="chat-bubble bot">
+        <p>Hello! I'm your medical assistant. How can I help you today?</p>
+        <span class="timestamp">Just now</span>
+      </div>
+    </div>
+
+    <form class="chat-input" id="chat-form">
+      <input type="text" id="user-input" placeholder="Type your message..." required>
+      <button type="submit" id="send-btn">Send</button>
+    </form>
+  </div>
+
+  <script>
+    const chatWindow = document.getElementById("chat-window");
+    const chatForm = document.getElementById("chat-form");
+    const userInput = document.getElementById("user-input");
+
+    chatForm.addEventListener("submit", function(event) {
+      event.preventDefault();
+      const message = userInput.value.trim();
+      if (message === "") return;
+
+      // Add user message to chat window
+      const userBubble = document.createElement("div");
+      userBubble.className = "chat-bubble user";
+      userBubble.innerHTML = `<p>${message}</p><span class="timestamp">Just now</span>`;
+      chatWindow.appendChild(userBubble);
+
+      // Send to backend
+      fetch("/get", {
+        method: "POST",
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: "message=" + encodeURIComponent(message)
+      })
+      .then(response => response.json())
+      .then(data => {
+        // Add bot response to chat window
+        const botBubble = document.createElement("div");
+        botBubble.className = "chat-bubble bot";
+        botBubble.innerHTML = `<p>${data.response}</p><span class="timestamp">Just now</span>`;
+        chatWindow.appendChild(botBubble);
+
+        // Scroll to bottom
+        chatWindow.scrollTop = chatWindow.scrollTop + chatWindow.scrollHeight;
+      })
+      .catch(error => {
+        console.error("Error:", error);
+      });
+
+      // Clear input
+      userInput.value = "";
+    });
+  </script>
+</body>
+</html>
