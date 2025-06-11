@@ -5,7 +5,7 @@ import re
 from pinecone import Pinecone, ServerlessSpec
 from langchain_pinecone import Pinecone as PineconeVectorStore
 from langchain_huggingface import HuggingFaceEmbeddings
-from transformers import pipeline
+from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
 
 # Load environment variables
 load_dotenv()
@@ -35,30 +35,42 @@ vectorstore = PineconeVectorStore.from_existing_index(
     text_key="text"
 )
 
-# Set up retriever
-retriever = vectorstore.as_retriever()
+# Set up retriever (limit to 3 most relevant chunks)
+retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
 
-# HF Transformers pipeline
-qa_pipeline = pipeline("text-generation", model="gpt2", tokenizer="gpt2")
+# Load FLAN-T5-small model locally (free and instruction-tuned)
+model_name = "google/flan-t5-small"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+
+# Hugging Face pipeline for text2text-generation
+qa_pipeline = pipeline("text2text-generation", model=model, tokenizer=tokenizer)
 
 def deduplicate_sentences(text):
     sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
     unique_sentences = []
     seen = set()
     for sentence in sentences:
-        if sentence not in seen:
-            seen.add(sentence)
+        norm = re.sub(r'[^a-zA-Z0-9\s]', '', sentence.lower())
+        if norm not in seen:
+            seen.add(norm)
             unique_sentences.append(sentence)
     return ' '.join(unique_sentences)
 
 def is_nonsense(text):
-    # Example: Check for common errors or nonsense phrases
     nonsense_phrases = [
         "colds can develop in blood",
-        "colds frequently develop under normal skin conditions"
+        "colds frequently develop under normal skin conditions",
+        "heart disease can be caused by eating fruits"
     ]
     text_lower = text.lower()
     return any(phrase in text_lower for phrase in nonsense_phrases)
+
+def clean_response(text):
+    text = re.sub(r'Toni Rizzo|Dallas|Houston', '', text, flags=re.IGNORECASE)
+    text = ' '.join(text.split())
+    text = deduplicate_sentences(text)
+    return text
 
 # Flask app
 app = Flask(__name__)
@@ -72,30 +84,24 @@ def get_bot_response():
     try:
         user_input = request.form["message"]
         docs = retriever.get_relevant_documents(user_input)
-        context = " ".join([doc.page_content for doc in docs])
+        context = " ".join([doc.page_content for doc in docs])[:2000]  # Limit context length to avoid cutoff
+        
         prompt = (
-            "You are a medical assistant. Use only the factual medical information from the context below to answer the question. "
-            "Ignore any personal stories, names, or locations. "
-            "Do not repeat information. "
-            "If you don't know the answer, say you don't know. "
-            "Keep your answer concise and to the point (no more than three sentences).\n\n"
+            "You are a helpful medical assistant. Use the medical information from the context below to answer the user's question. "
+            "If the answer is not found in the context, say 'I don't know.' Keep the answer short and factual.\n\n"
             f"Context: {context}\n\n"
             f"Question: {user_input}\n"
             "Answer:"
         )
+
         response = qa_pipeline(
             prompt,
-            max_new_tokens=100,
-            truncation=True,
-            do_sample=True
+            max_new_tokens=400,
+            do_sample=False
         )[0]['generated_text']
-        cleaned_response = response.replace(prompt, "").strip()
-        # Further clean the response (remove names, locations, extra spaces)
-        cleaned_response = re.sub(r'Toni Rizzo|Dallas|Houston', '', cleaned_response)
-        cleaned_response = ' '.join(cleaned_response.split())
-        # Deduplicate sentences
-        cleaned_response = deduplicate_sentences(cleaned_response)
-        # Check for nonsense
+
+        cleaned_response = response.strip()
+        cleaned_response = clean_response(cleaned_response)
         if is_nonsense(cleaned_response):
             cleaned_response = "Sorry, I couldn't provide a reliable answer. Please consult a healthcare provider."
         return jsonify({"response": cleaned_response})

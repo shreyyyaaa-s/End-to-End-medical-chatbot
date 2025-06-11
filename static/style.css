@@ -12,11 +12,14 @@ body {
   justify-content: center;
   align-items: center;
   height: 100vh;
+  margin: 0;
+  overflow: hidden; /* Prevent full body scroll */
 }
 
 .chat-container {
   width: 90%;
   max-width: 600px;
+  height: 90vh; /* Added fixed height to prevent overflow */
   background-color: #1c2b36;
   border-radius: 12px;
   display: flex;
@@ -26,12 +29,16 @@ body {
 }
 
 .chat-header {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 12px;
   background-color: #1c2b36;
   padding: 15px 20px;
   border-bottom: 1px solid #2f3e4c;
+  position: sticky;  /* <-- makes header stay on top */
+  top: 0;
+  z-index: 10;
 }
 
 .header-avatar {
@@ -116,6 +123,7 @@ body {
   padding: 10px 15px;
   background-color: #1c2b36;
   border-top: 1px solid #2f3e4c;
+  flex-shrink: 0;
 }
 
 .chat-input input {
